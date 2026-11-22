@@ -141,7 +141,7 @@ const AnalyticsPage = () => {
   const { data: customers, isLoading: isLoadingCustomers } =
     useCustomerAnalytics(date);
 
-  const { data: orders, isLoading: isLoadingOrders } = useOrderAnalytics(
+  const { data: orders, isError: ordersUnavailable, isLoading: isLoadingOrders } = useOrderAnalytics(
     ['this-month', 'last-month', 'last-3-months'].includes(rangeParam)
       ? rangeParam
       : 'custom',
@@ -375,6 +375,8 @@ const AnalyticsPage = () => {
                     <Text size="small">Total Orders</Text>
                     {isLoadingOrders ? (
                       <SmallCardSkeleton />
+                    ) : ordersUnavailable || !orders?.currency_code ? (
+                      <Text size="small" role="status">Sales data unavailable</Text>
                     ) : (
                       <>
                         <Text size="xlarge" weight="plus">
@@ -425,13 +427,15 @@ const AnalyticsPage = () => {
                     <Text size="small">Total Sales</Text>
                     {isLoadingOrders ? (
                       <SmallCardSkeleton />
+                    ) : ordersUnavailable || !orders?.currency_code ? (
+                      <Text size="small" role="status">Sales data unavailable</Text>
                     ) : (
                       <>
                         <Text size="xlarge" weight="plus">
                           {new Intl.NumberFormat('en-US', {
                             style: 'currency',
-                            currency: orders?.currency_code || 'EUR',
-                          }).format(orders?.total_sales || 0)}
+                            currency: orders.currency_code,
+                          }).format(orders.total_sales)}
                         </Text>
                         <Text size="xsmall" className="text-ui-fg-muted">
                           {(orders?.prev_sales_percent || 0) > 0 && '+'}

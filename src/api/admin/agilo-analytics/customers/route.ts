@@ -13,14 +13,14 @@ import {
   getAllDateGroupingKeys,
   getDateGroupingKey,
 } from '../../../../utils/orders';
-import { DateTime } from 'luxon';
+import { analyticsRates } from '../../../../utils/exchange-rates';
 
 export const adminCustomerAnalyticsQuerySchema = z.object({
   date_from: z.string(),
   date_to: z.string(),
 });
 
-const DEFAULT_CURRENCY = 'EUR';
+
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const result = adminCustomerAnalyticsQuerySchema.safeParse(req.query);
@@ -36,29 +36,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const currencyCode =
     store?.supported_currencies
       ?.find((c) => c.is_default)
-      ?.currency_code?.toUpperCase() || DEFAULT_CURRENCY;
+      ?.currency_code?.toUpperCase();
+  if (!currencyCode) throw new Error('Store default currency is missing');
 
-  const cacheKey = `exchange_rates_${currencyCode}`;
-
-  let exchangeRates: { rates: Record<string, any> } | null =
-    await cacheModuleService.get(cacheKey);
-
-  if (!exchangeRates) {
-    const response = await fetch(
-      `https://api.frankfurter.dev/v1/latest?base=${currencyCode}`
-    );
-    exchangeRates = await response.json();
-
-    const now = DateTime.now().setZone('Europe/Berlin');
-    let expireAt = now.set({ hour: 16, minute: 0, second: 0, millisecond: 0 });
-    if (now >= expireAt) {
-      expireAt = expireAt.plus({ days: 1 });
-    }
-
-    const ttl = Math.floor(expireAt.diff(now, 'seconds').seconds);
-
-    await cacheModuleService.set(cacheKey, exchangeRates, ttl);
-  }
 
   if (!result.success) {
     throw new MedusaError(
@@ -85,6 +65,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       status: { $nin: ['draft', 'canceled'] },
     },
   });
+
+  const rates = await analyticsRates(currencyCode, orders, cacheModuleService);
 
   const customers = Object.values(
     orders.reduce((acc, { customer }) => {
@@ -152,10 +134,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   > = {};
 
   for (const order of orders) {
-    const exchangeRate =
-      order.currency_code.toUpperCase() !== currencyCode
-        ? exchangeRates?.rates[order.currency_code.toUpperCase()]
-        : 1;
+    const exchangeRate = rates[order.currency_code.toUpperCase()];
     const orderTotal = new BigNumber(order.total).numeric / exchangeRate;
     const key = getDateGroupingKey(
       new Date(order.created_at),
